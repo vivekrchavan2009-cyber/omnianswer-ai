@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scriptorium — AI Document Repair</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14161c">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Scriptorium">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.7.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+
+<style>
+:root{
+  --bg:#14161c;
+  --bg-elev:#1b1e27;
+  --bg-elev-2:#21252f;
+  --border:#2b2f3b;
+  --border-soft:#23262f;
+  --text:#e7e4dc;
+  --text-dim:#9497a6;
+  --text-faint:#666a78;
+  --gold:#c9a227;
+  --gold-soft:rgba(201,162,39,.16);
+  --teal:#4fa688;
+  --teal-soft:rgba(79,166,136,.16);
+  --rust:#c2483b;
+  --rust-soft:rgba(194,72,59,.16);
+  --ink:#5b7fbf;
+  --ink-soft:rgba(91,127,191,.16);
+  --radius:3px;
+  --serif:'Source Serif 4', Georgia, serif;
+  --sans:'Inter', -apple-system, sans-serif;
+  --mono:'IBM Plex Mono', ui-monospace, monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.5;
+  min-height:100vh;
+}
+::selection{background:var(--gold-soft);}
+a{color:inherit;}
+button{font-family:inherit;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+#app{display:flex;min-height:100vh;}
+
+/* ---------- SIDEBAR ---------- */
+.sidebar{
+  width:216px;flex-shrink:0;
+  background:var(--bg-elev);
+  border-right:1px solid var(--border-soft);
+  display:flex;flex-direction:column;
+  padding:22px 14px;
+  position:sticky;top:0;height:100vh;
+}
+.brand{display:flex;align-items:baseline;gap:8px;padding:0 8px 22px 8px;border-bottom:1px solid var(--border-soft);margin-bottom:18px;}
+.brand-mark{font-family:var(--serif);font-weight:700;font-size:21px;letter-spacing:.2px;}
+.brand-mark em{font-style:normal;color:var(--gold);}
+.brand-sub{font-size:10.5px;color:var(--text-faint);letter-spacing:.03em;margin-top:2px;}
+.nav{display:flex;flex-direction:column;gap:2px;}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:var(--radius);
+  color:var(--text-dim);cursor:pointer;font-size:13.5px;font-weight:500;
+  border:1px solid transparent;
+  transition:background .12s ease, color .12s ease;
+}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;opacity:.85;}
+.nav-item:hover{background:var(--bg-elev-2);color:var(--text);}
+.nav-item.active{background:var(--bg-elev-2);color:var(--text);border-color:var(--border);}
+.nav-item.active .dot{background:var(--gold);}
+.nav-spacer{flex:1;}
+.sidebar-foot{padding:10px 8px 0;border-top:1px solid var(--border-soft);font-size:11px;color:var(--text-faint);}
+.sidebar-foot b{color:var(--text-dim);}
+
+/* ---------- MAIN ---------- */
+.workspace{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 32px;border-bottom:1px solid var(--border-soft);
+  position:sticky;top:0;background:rgba(20,22,28,.92);backdrop-filter:blur(6px);z-index:5;
+}
+.topbar h1{font-family:var(--serif);font-weight:600;font-size:21px;margin:0;}
+.topbar .sub{color:var(--text-faint);font-size:12.5px;margin-top:2px;}
+.view{padding:28px 32px 60px;max-width:1180px;}
+.view[hidden]{display:none;}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 15px;border-radius:var(--radius);border:1px solid var(--border);
+  background:var(--bg-elev-2);color:var(--text);font-size:13px;font-weight:500;
+  cursor:pointer;transition:border-color .12s,background .12s;
+}
+.btn:hover{border-color:#3a3f4f;background:#262a35;}
+.btn-primary{background:var(--gold);border-color:var(--gold);color:#1a1508;font-weight:600;}
+.btn-primary:hover{background:#dcb42d;border-color:#dcb42d;}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--text-dim);}
+.btn-ghost:hover{background:var(--bg-elev-2);color:var(--text);}
+.btn-danger{color:var(--rust);}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+
+/* cards / stats */
+.grid-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px;}
+.stat-card{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);padding:16px 18px;}
+.stat-card .num{font-family:var(--serif);font-size:26px;font-weight:600;}
+.stat-card .label{color:var(--text-faint);font-size:12px;margin-top:3px;}
+
+.hero{
+  border:1px solid var(--border-soft);border-radius:var(--radius);
+  background:linear-gradient(180deg,var(--bg-elev),var(--bg));
+  padding:34px 34px 30px;margin-bottom:26px;
+}
+.hero h2{font-family:var(--serif);font-size:26px;line-height:1.25;margin:0 0 10px;max-width:560px;font-weight:600;}
+.hero p{color:var(--text-dim);max-width:520px;margin:0 0 18px;font-size:14px;}
+.hero-actions{display:flex;gap:10px;}
+
+.section-title{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;}
+.section-title .hint{font-family:var(--sans);font-size:12px;font-weight:400;color:var(--text-faint);}
+
+/* upload */
+.upload-zone{
+  border:1.5px dashed var(--border);border-radius:var(--radius);
+  padding:34px;text-align:center;background:var(--bg-elev);
+  cursor:pointer;transition:border-color .15s,background .15s;
+}
+.upload-zone.drag{border-color:var(--gold);background:var(--gold-soft);}
+.upload-zone .up-icon{font-size:26px;margin-bottom:8px;}
+.upload-zone .up-title{font-family:var(--serif);font-size:16px;margin-bottom:4px;}
+.upload-zone .up-sub{color:var(--text-faint);font-size:12px;margin-bottom:16px;}
+.upload-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.filetypes{margin-top:14px;font-size:11px;color:var(--text-faint);}
+
+.queue-list{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+.queue-item{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;
+  border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--bg-elev);
+}
+.queue-item .qname{flex:1;font-size:13px;}
+.queue-item .qtype{font-family:var(--mono);font-size:10.5px;color:var(--text-faint);background:var(--bg-elev-2);padding:2px 6px;border-radius:2px;}
+.queue-item .qstatus{font-size:11.5px;padding:3px 8px;border-radius:12px;}
+.qstatus.pending{color:var(--text-faint);background:var(--bg-elev-2);}
+.qstatus.working{color:var(--gold);background:var(--gold-soft);}
+.qstatus.done{color:var(--teal);background:var(--teal-soft);}
+.qstatus.review{color:var(--rust);background:var(--rust-soft);}
+.qstatus.error{color:var(--rust);background:var(--rust-soft);}
+
+textarea.paste-box{
+  width:100%;min-height:130px;background:var(--bg-elev);border:1px solid var(--border);
+  border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:12.5px;
+  padding:12px;resize:vertical;
+}
+textarea.paste-box:focus{outline:none;border-color:var(--gold);}
+
+.progress-log{margin-top:14px;font-family:var(--mono);font-size:11.5px;color:var(--text-dim);display:flex;flex-direction:column;gap:3px;}
+.progress-log .step.active{color:var(--gold);}
+.progress-log .step.done{color:var(--teal);}
+
+/* tables (history) */
+.table-toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.input, select.input{
+  background:var(--bg-elev);border:1px solid var(--border);color:var(--text);
+  padding:8px 10px;border-radius:var(--radius);font-size:13px;
+}
+.input:focus, select.input:focus{outline:none;border-color:var(--gold);}
+table.hist{width:100%;border-collapse:collapse;font-size:13px;}
+table.hist th{text-align:left;color:var(--text-faint);font-weight:500;font-size:11.5px;text-transform:none;padding:8px 10px;border-bottom:1px solid var(--border);}
+table.hist td{padding:11px 10px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+table.hist tr:hover td{background:var(--bg-elev);}
+.hist-name{font-weight:500;cursor:pointer;}
+.hist-name:hover{color:var(--gold);}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;}
+.badge.completed{background:var(--teal-soft);color:var(--teal);}
+.badge.review{background:var(--rust-soft);color:var(--rust);}
+.badge.analyzing{background:var(--gold-soft);color:var(--gold);}
+.badge.exported{background:var(--ink-soft);color:var(--ink);}
+.badge.uploaded{background:var(--bg-elev-2);color:var(--text-dim);}
+.row-actions{display:flex;gap:4px;}
+.icon-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;padding:5px;border-radius:3px;}
+.icon-btn:hover{color:var(--text);background:var(--bg-elev-2);}
+.empty-state{padding:50px 20px;text-align:center;color:var(--text-faint);}
+.empty-state .es-title{font-family:var(--serif);color:var(--text-dim);font-size:16px;margin-bottom:6px;}
+
+/* project detail */
+.proj-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:20px;}
+.proj-head h2{font-family:var(--serif);font-size:22px;margin:0 0 6px;}
+.meta-row{display:flex;gap:14px;flex-wrap:wrap;color:var(--text-faint);font-size:12px;}
+.score-pair{display:flex;gap:18px;align-items:center;}
+.score-box{text-align:center;}
+.score-box .sv{font-family:var(--serif);font-size:24px;font-weight:600;}
+.score-box.before .sv{color:var(--rust);}
+.score-box.after .sv{color:var(--teal);}
+.score-box .sl{font-size:10.5px;color:var(--text-faint);}
+.arrow{color:var(--text-faint);font-size:18px;}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;}
+.tab{padding:9px 14px;font-size:13px;color:var(--text-faint);cursor:pointer;border-bottom:2px solid transparent;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--text);border-color:var(--gold);}
+.tabpane[hidden]{display:none;}
+
+.diff-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.diff-pane{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);overflow:hidden;}
+.diff-pane .dp-head{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--border-soft);font-size:11.5px;color:var(--text-faint);letter-spacing:.02em;}
+.diff-pane .dp-body{padding:16px;font-family:var(--mono);font-size:12.5px;line-height:1.75;white-space:pre-wrap;max-height:520px;overflow:auto;}
+.dp-body[contenteditable="true"]{outline:none;border:1px dashed var(--gold);}
+mark.chg{border-radius:2px;padding:0 2px;cursor:pointer;text-decoration:none;}
+mark.chg.cat-corrected{background:var(--gold-soft);box-shadow:inset 0 -1px 0 var(--gold);}
+mark.chg.cat-reconstructed{background:var(--ink-soft);box-shadow:inset 0 -1px 0 var(--ink);}
+mark.chg.cat-formatting{background:rgba(148,151,166,.18);box-shadow:inset 0 -1px 0 var(--text-dim);}
+mark.chg.cat-review{background:var(--rust-soft);box-shadow:inset 0 -1px 0 var(--rust);}
+mark.chg.cat-added{background:var(--teal-soft);box-shadow:inset 0 -1px 0 var(--teal);}
+mark.chg.removed{background:rgba(194,72,59,.1);text-decoration:line-through;color:var(--text-faint);}
+mark.chg.selected{outline:1.5px solid var(--text);}
+
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0;font-size:11.5px;color:var(--text-dim);}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+.legend i.corrected{background:var(--gold);}
+.legend i.reconstructed{background:var(--ink);}
+.legend i.formatting{background:var(--text-dim);}
+.legend i.review{background:var(--rust);}
+.legend i.added{background:var(--teal);}
+
+.inspector{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);padding:16px 18px;margin-top:16px;}
+.inspector .ins-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.inspector .cat-tag{font-size:11px;padding:2px 8px;border-radius:10px;}
+.inspector .conf{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+.inspector .ins-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px;}
+.inspector .ins-label{font-size:10.5px;color:var(--text-faint);margin-bottom:4px;}
+.inspector .ins-text{font-family:var(--mono);font-size:12.5px;background:var(--bg-elev-2);padding:8px 10px;border-radius:3px;}
+.inspector .reason{font-size:13px;color:var(--text-dim);margin:8px 0 14px;line-height:1.6;}
+.inspector .ins-actions{display:flex;gap:8px;}
+.issue-list{display:flex;flex-direction:column;gap:6px;margin-top:14px;max-height:280px;overflow:auto;}
+.issue-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border-soft);border-radius:3px;cursor:pointer;font-size:12.5px;}
+.issue-row:hover{border-color:var(--border);background:var(--bg-elev-2);}
+.issue-row .cat-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.issue-row .isummary{flex:1;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.issue-row .iconf{font-family:var(--mono);color:var(--text-faint);}
+.issue-row.rejected{opacity:.45;}
+
+.report-box{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);padding:22px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.7;}
+
+.settings-grid{display:flex;flex-direction:column;gap:22px;max-width:560px;}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field label{font-size:12.5px;color:var(--text-dim);font-weight:500;}
+.field .fh{font-size:11.5px;color:var(--text-faint);}
+.field input[type=text], .field input[type=password], .field select{
+  background:var(--bg-elev);border:1px solid var(--border);color:var(--text);
+  padding:9px 11px;border-radius:var(--radius);font-size:13px;
+}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border-soft);}
+.toggle-row .tr-label{font-size:13px;}
+.toggle-row .tr-sub{font-size:11.5px;color:var(--text-faint);margin-top:2px;}
+.switch{position:relative;width:38px;height:21px;flex-shrink:0;}
+.switch input{opacity:0;width:0;height:0;}
+.switch .slider{position:absolute;inset:0;background:var(--bg-elev-2);border:1px solid var(--border);border-radius:20px;cursor:pointer;transition:.15s;}
+.switch .slider:before{content:"";position:absolute;width:15px;height:15px;left:2px;top:2px;background:var(--text-faint);border-radius:50%;transition:.15s;}
+.switch input:checked + .slider{background:var(--gold-soft);border-color:var(--gold);}
+.switch input:checked + .slider:before{transform:translateX(17px);background:var(--gold);}
+
+.toast-wrap{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:100;}
+.toast{background:var(--bg-elev-2);border:1px solid var(--border);border-radius:var(--radius);padding:11px 16px;font-size:13px;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.toast.error{border-color:var(--rust);color:#f0b3ac;}
+.toast.success{border-color:var(--teal);}
+
+.install-banner{
+  position:fixed;left:16px;right:16px;bottom:16px;max-width:420px;margin:0 auto;
+  background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;display:flex;align-items:center;gap:12px;z-index:150;
+  box-shadow:0 12px 32px rgba(0,0,0,.45);
+}
+.install-banner[hidden]{display:none;}
+.install-banner img{width:38px;height:38px;border-radius:8px;flex-shrink:0;}
+.install-banner .ib-body{flex:1;min-width:0;}
+.install-banner .ib-title{font-family:var(--serif);font-size:14px;font-weight:600;}
+.install-banner .ib-sub{font-size:11.5px;color:var(--text-faint);margin-top:2px;line-height:1.4;}
+.install-banner .ib-actions{display:flex;gap:6px;flex-shrink:0;}
+
+.modal-bg{position:fixed;inset:0;background:rgba(10,11,15,.65);display:flex;align-items:center;justify-content:center;z-index:200;}
+.modal-bg[hidden]{display:none;}
+.modal{background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:400px;max-width:90vw;}
+.modal h3{font-family:var(--serif);margin:0 0 14px;font-size:17px;}
+.modal .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+
+@media (max-width:880px){
+  .diff-grid{grid-template-columns:1fr;}
+  .grid-stats{grid-template-columns:repeat(2,1fr);}
+  .sidebar{width:64px;padding:16px 8px;}
+  .brand-sub, .nav-item span.label, .sidebar-foot{display:none;}
+  .nav-item{justify-content:center;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div>
+        <div class="brand-mark">Script<em>orium</em></div>
+        <div class="brand-sub">AI Document Repair</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" data-view="dashboard"><span class="label">Dashboard</span></div>
+      <div class="nav-item" data-view="new"><span class="label">New Repair</span></div>
+      <div class="nav-item" data-view="history"><span class="label">History</span></div>
+      <div class="nav-item" data-view="settings"><span class="label">Settings</span></div>
+    </nav>
+    <div class="nav-spacer"></div>
+    <div class="sidebar-foot">Runs in your browser.<br>Files never leave your device except as text sent to <b>your own</b> Groq or Claude API key.</div>
+  </aside>
+
+  <main class="workspace">
+    <div class="topbar">
+      <div>
+        <h1 id="topbar-title">Dashboard</h1>
+        <div class="sub" id="topbar-sub">Detect. Correct. Restore.</div>
+      </div>
+      <div id="topbar-actions"></div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dashboard">
+      <div class="hero">
+        <h2>AI made a mess of your document? Let AI fix it.</h2>
+        <p>Detect corrupted text, strange symbols, formatting errors and AI-generation mistakes — then intelligently restore the intended meaning, one traceable correction at a time.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-view="new">Repair a Document</button>
+          <button class="btn" id="btn-how">See How It Works</button>
+        </div>
+      </div>
+
+      <div class="grid-stats">
+        <div class="stat-card"><div class="num" id="stat-docs">0</div><div class="label">Documents processed</div></div>
+        <div class="stat-card"><div class="num" id="stat-fixed">0</div><div class="label">Issues fixed</div></div>
+        <div class="stat-card"><div class="num" id="stat-review">0</div><div class="label">Needs review</div></div>
+        <div class="stat-card"><div class="num" id="stat-conf">–</div><div class="label">Average confidence</div></div>
+      </div>
+
+      <div class="section-title">Recently edited<span class="hint" data-view="history">View all history →</span></div>
+      <div id="recent-list"></div>
+
+      <div id="how-it-works" hidden style="margin-top:26px;">
+        <div class="section-title">How it works</div>
+        <div class="progress-log" style="font-size:12.5px;">
+          <div>1. Upload a PDF, Word, Excel, image, or paste text/screenshot.</div>
+          <div>2. Scriptorium extracts the text and asks the model to separate correct text from genuine corruption.</div>
+          <div>3. It reconstructs the likely intended text from context — and flags anything it isn't confident about as "Needs Review".</div>
+          <div>4. You review a side-by-side diff, accept/reject/edit each change, then export.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW REPAIR -->
+    <section class="view" id="view-new" hidden>
+      <div class="upload-zone" id="dropzone">
+        <div class="up-icon">◆</div>
+        <div class="up-title">Upload a document or image</div>
+        <div class="up-sub">Drop files here, or choose an option below</div>
+        <div class="upload-actions">
+          <button class="btn btn-primary" id="btn-upload-file">Upload File</button>
+          <button class="btn" id="btn-paste-text">Paste Text</button>
+          <button class="btn" id="btn-paste-shot">Paste Screenshot</button>
+        </div>
+        <input type="file" id="file-input" multiple accept=".txt,.docx,.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp" style="display:none;">
+        <div class="filetypes">Supports TXT · DOCX · PDF · XLSX · PNG/JPG/WebP · max 15&nbsp;MB per file. PPTX and OneNote: paste extracted text instead for now.</div>
+      </div>
+
+      <div id="paste-area" hidden style="margin-top:16px;">
+        <textarea class="paste-box" id="paste-textarea" placeholder="Paste the corrupted or AI-generated text here…"></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" id="btn-add-pasted">Add to queue</button>
+          <button class="btn btn-ghost btn-sm" id="btn-cancel-paste">Cancel</button>
+        </div>
+      </div>
+
+      <div id="shot-hint" hidden style="margin-top:16px;color:var(--text-dim);font-size:13px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn btn-primary btn-sm" id="btn-clipboard-read">Paste from clipboard</button>
+          <span style="color:var(--text-faint);font-size:11.5px;">Copy a screenshot first, then tap this.</span>
+        </div>
+        On desktop, or if the button above doesn't work on your device: tap into this box, then paste (long‑press → <b>Paste</b> on mobile, <b>Ctrl/Cmd+V</b> on desktop):
+        <div tabindex="0" id="shot-target" style="margin-top:8px;border:1.5px dashed var(--border);border-radius:3px;padding:24px;text-align:center;color:var(--text-faint);">Tap here, then long‑press and choose Paste</div>
+      </div>
+
+      <div class="queue-list" id="queue-list"></div>
+
+      <div style="margin-top:18px;display:flex;gap:10px;align-items:center;" id="analyze-row" hidden>
+        <button class="btn btn-primary" id="btn-analyze-all">Analyze &amp; Repair All</button>
+        <span style="color:var(--text-faint);font-size:12px;" id="analyze-note"></span>
+      </div>
+
+      <div class="progress-log" id="progress-log"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view" id="view-history" hidden>
+      <div class="table-toolbar">
+        <input class="input" id="hist-search" placeholder="Search by name or text…" style="flex:1;min-width:180px;">
+        <select class="input" id="hist-filter-type">
+          <option value="">All file types</option>
+          <option value="txt">TXT</option>
+          <option value="docx">DOCX</option>
+          <option value="pdf">PDF</option>
+          <option value="xlsx">XLSX</option>
+          <option value="image">Image</option>
+          <option value="pasted">Pasted text</option>
+        </select>
+        <select class="input" id="hist-sort">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </div>
+      <div id="history-table-wrap"></div>
+    </section>
+
+    <!-- PROJECT DETAIL -->
+    <section class="view" id="view-project" hidden>
+      <div class="proj-head">
+        <div>
+          <h2 id="pd-name">—</h2>
+          <div class="meta-row">
+            <span id="pd-type">—</span><span>·</span>
+            <span id="pd-date">—</span><span>·</span>
+            <span id="pd-status">—</span><span>·</span>
+            <span id="pd-lang">—</span>
+          </div>
+        </div>
+        <div class="score-pair">
+          <div class="score-box before"><div class="sv" id="pd-before">–</div><div class="sl">BEFORE</div></div>
+          <div class="arrow">→</div>
+          <div class="score-box after"><div class="sv" id="pd-after">–</div><div class="sl">AFTER</div></div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="changes">Changes</div>
+        <div class="tab" data-tab="report">Repair Report</div>
+        <div class="tab" data-tab="versions">Version History</div>
+      </div>
+
+      <div class="tabpane" id="tab-changes">
+        <div class="legend">
+          <span><i class="corrected"></i>Corrected</span>
+          <span><i class="reconstructed"></i>Reconstructed</span>
+          <span><i class="formatting"></i>Formatting fixed</span>
+          <span><i class="review"></i>Needs review</span>
+          <span><i class="added"></i>Added</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <button class="btn btn-sm" id="btn-accept-all">Accept all</button>
+          <button class="btn btn-sm" id="btn-reject-all">Reject all</button>
+          <button class="btn btn-sm btn-ghost" id="btn-toggle-edit">Edit manually</button>
+          <span class="nav-spacer"></span>
+          <button class="btn btn-sm btn-ghost" id="btn-download-original" hidden>Download Original</button>
+          <button class="btn btn-sm" id="btn-export-txt">Export .txt</button>
+          <button class="btn btn-sm" id="btn-export-docx">Export .docx</button>
+          <button class="btn btn-sm" id="btn-export-pdf">Export .pdf (plain text)</button>
+          <button class="btn btn-sm btn-primary" id="btn-export-pdf-layout" hidden>Export .pdf (preserve layout)</button>
+        </div>
+        <div id="layout-hint" style="font-size:11.5px;color:var(--text-faint);margin:-4px 0 12px;" hidden></div>
+        <div class="diff-grid">
+          <div class="diff-pane">
+            <div class="dp-head"><span>ORIGINAL</span><span id="pd-orig-count"></span></div>
+            <div class="dp-body" id="pane-original"></div>
+          </div>
+          <div class="diff-pane">
+            <div class="dp-head"><span>AI-CORRECTED</span><span id="pd-corr-count"></span></div>
+            <div class="dp-body" id="pane-corrected"></div>
+          </div>
+        </div>
+        <div class="inspector" id="inspector" hidden></div>
+        <div class="section-title" style="margin-top:20px;">All flagged changes</div>
+        <div class="issue-list" id="issue-list"></div>
+      </div>
+
+      <div class="tabpane" id="tab-report" hidden>
+        <div class="report-box" id="report-box"></div>
+        <button class="btn btn-sm" style="margin-top:12px;" id="btn-export-report">Export Repair Report (.md)</button>
+      </div>
+
+      <div class="tabpane" id="tab-versions" hidden>
+        <div id="versions-list"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings" hidden>
+      <div class="settings-grid">
+        <div class="field">
+          <label>AI backend</label>
+          <select id="set-backend">
+            <option value="groq">Groq — free tier</option>
+            <option value="claude">Claude — your own API key</option>
+          </select>
+          <div class="fh">Groq's free tier needs no card and is generous for personal use, but is rate-limited and its free model lineup changes fairly often. Claude tends to give more reliable corrections, at a small per-call cost.</div>
+        </div>
+
+        <div id="settings-groq">
+          <div class="field">
+            <label>Groq API key</label>
+            <input type="password" id="set-groqkey" placeholder="gsk_...">
+            <div class="fh">Free at console.groq.com/keys. Stored only in this browser and sent directly to api.groq.com.</div>
+          </div>
+          <div class="field">
+            <label>Groq text model</label>
+            <input type="text" id="set-groqmodel" placeholder="openai/gpt-oss-120b">
+          </div>
+          <div class="field">
+            <label>Groq vision model (for images/screenshots)</label>
+            <input type="text" id="set-groqvisionmodel" placeholder="qwen/qwen3.6-27b">
+            <div class="fh">Groq's free multimodal model is currently a preview and its name changes over time — check console.groq.com/docs/vision if image analysis stops working.</div>
+          </div>
+        </div>
+
+        <div id="settings-claude">
+          <div class="field">
+            <label>Claude API key</label>
+            <input type="password" id="set-apikey" placeholder="sk-ant-...">
+            <div class="fh">Stored only in this browser's local storage. Sent directly from your browser to api.anthropic.com — never to any Scriptorium server, because there isn't one.</div>
+          </div>
+          <div class="field">
+            <label>Model</label>
+            <input type="text" id="set-model" placeholder="claude-sonnet-5">
+            <div class="fh">Any current Claude model ID that supports vision, e.g. claude-sonnet-5 or claude-opus-5.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Correction sensitivity</label>
+          <select id="set-sensitivity">
+            <option value="low">Low — only flag obvious corruption</option>
+            <option value="medium" selected>Medium — balanced</option>
+            <option value="high">High — flag anything questionable</option>
+          </select>
+        </div>
+        <div class="toggle-row">
+          <div><div class="tr-label">Auto-accept high-confidence corrections</div><div class="tr-sub">Corrections ≥ 90% confidence are pre-accepted</div></div>
+          <label class="switch"><input type="checkbox" id="set-autoaccept"><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="tr-label">Preserve original formatting on export</div><div class="tr-sub">Best-effort; complex layouts may simplify</div></div>
+          <label class="switch"><input type="checkbox" id="set-preserve" checked><span class="slider"></span></label>
+        </div>
+        <div class="field">
+          <label>Default export format</label>
+          <select id="set-exportfmt">
+            <option value="txt">TXT</option>
+            <option value="docx">DOCX</option>
+            <option value="pdf">PDF</option>
+          </select>
+        </div>
+        <div>
+          <button class="btn" id="btn-save-settings">Save settings</button>
+        </div>
+        <div style="border-top:1px solid var(--border-soft);padding-top:18px;">
+          <div class="section-title" style="margin-bottom:8px;">Privacy</div>
+          <p style="color:var(--text-dim);font-size:13px;line-height:1.6;">Uploaded files are parsed entirely in your browser. Extracted text (or image data, for screenshots) is sent only to whichever provider you selected above — Groq or Anthropic — using the key you provide, for the sole purpose of analysis. Nothing is uploaded to a Scriptorium server. Projects and history are stored in this browser's local storage on this device only.</p>
+          <button class="btn btn-danger btn-sm" id="btn-delete-history">Delete all history</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="install-banner" id="install-banner" hidden>
+  <img src="icon-192.png" alt="">
+  <div class="ib-body">
+    <div class="ib-title" id="ib-title">Install Scriptorium</div>
+    <div class="ib-sub" id="ib-sub">Add it to your device for one-tap access, even offline.</div>
+  </div>
+  <div class="ib-actions">
+    <button class="btn btn-ghost btn-sm" id="ib-dismiss">Not now</button>
+    <button class="btn btn-primary btn-sm" id="ib-install">Install</button>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<div class="modal-bg" id="modal-bg" hidden>
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<script>
+/* ======================= STATE & STORAGE ======================= */
+const STORE_KEY = 'scriptorium_projects_v1';
+const SETTINGS_KEY = 'scriptorium_settings_v1';
+
+function defaultSettings(){
+  return {
+    backend:'groq',
+    apiKey:'', model:'claude-sonnet-5',
+    groqKey:'', groqModel:'openai/gpt-oss-120b', groqVisionModel:'qwen/qwen3.6-27b',
+    sensitivity:'medium', autoAccept:false, preserve:true, exportFmt:'txt'
+  };
+}
+function loadSettings(){
+  try{ return Object.assign(defaultSettings(), JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')); }
+  catch(e){ return defaultSettings(); }
+}
+function saveSettings(s){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+function loadProjects(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(e){ return []; }
+}
+function saveProjects(list){ localStorage.setItem(STORE_KEY, JSON.stringify(list)); }
+
+let settings = loadSettings();
+let projects = loadProjects();
+let queue = []; // files/text queued in New Repair, not yet processed
+let currentProjectId = null;
+let currentTab = 'changes';
+let selectedIssueIdx = null;
+let editMode = false;
+
+/* ======================= UTIL ======================= */
+function uid(){ return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function nowISO(){ return new Date().toISOString(); }
+function fmtDate(iso){ const d=new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(msg, kind){
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind?(' '+kind):'');
+  el.textContent = msg;
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(()=>el.remove(), 5200);
+}
+function catClass(cat){
+  switch((cat||'').toLowerCase()){
+    case 'corrected': return 'cat-corrected';
+    case 'reconstructed': return 'cat-reconstructed';
+    case 'formatting fixed': return 'cat-formatting';
+    case 'needs review': return 'cat-review';
+    case 'added': return 'cat-added';
+    default: return 'cat-corrected';
+  }
+}
+function catDotColor(cat){
+  switch((cat||'').toLowerCase()){
+    case 'corrected': return 'var(--gold)';
+    case 'reconstructed': return 'var(--ink)';
+    case 'formatting fixed': return 'var(--text-dim)';
+    case 'needs review': return 'var(--rust)';
+    case 'added': return 'var(--teal)';
+    default: return 'var(--gold)';
+  }
+}
+
+/* ======================= NAVIGATION ======================= */
+const views = ['dashboard','new','history','project','settings'];
+function showView(name){
+  views.forEach(v=>{
+    document.getElementById('view-'+v).hidden = (v!==name);
+  });
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===name));
+  const titles = {dashboard:['Dashboard','Detect. Correct. Restore.'],
+    new:['New Repair','Upload, paste, or drop a document to begin.'],
+    history:['History','Every document you have repaired on this device.'],
+    project:['Repair workspace','Review, accept, and export corrections.'],
+    settings:['Settings','API key, sensitivity, export defaults, and privacy.']};
+  document.getElementById('topbar-title').textContent = titles[name][0];
+  document.getElementById('topbar-sub').textContent = titles[name][1];
+  if(name==='dashboard') renderDashboard();
+  if(name==='history') renderHistory();
+  if(name==='settings') renderSettings();
+}
+document.querySelectorAll('[data-view]').forEach(el=>{
+  el.addEventListener('click', ()=>showView(el.dataset.view));
+});
+document.getElementById('btn-how').addEventListener('click', ()=>{
+  const h = document.getElementById('how-it-works'); h.hidden = !h.hidden;
+});
+
+/* ======================= DASHBOARD ======================= */
+function renderDashboard(){
+  const docs = projects.length;
+  let fixed=0, review=0, confs=[];
+  projects.forEach(p=>{
+    fixed += (p.issues||[]).filter(i=>i.accepted!==false).length;
+    review += (p.issues||[]).filter(i=>(i.category||'').toLowerCase()==='needs review').length;
+    if(typeof p.confidenceAfter==='number') confs.push(p.confidenceAfter);
+  });
+  document.getElementById('stat-docs').textContent = docs;
+  document.getElementById('stat-fixed').textContent = fixed;
+  document.getElementById('stat-review').textContent = review;
+  document.getElementById('stat-conf').textContent = confs.length ? Math.round(confs.reduce((a,b)=>a+b,0)/confs.length)+'%' : '–';
+
+  const recent = [...projects].sort((a,b)=> new Date(b.updatedAt)-new Date(a.updatedAt)).slice(0,5);
+  const wrap = document.getElementById('recent-list');
+  if(!recent.length){
+    wrap.innerHTML = '<div class="empty-state"><div class="es-title">No documents yet</div>Repair your first document to see it here.</div>';
+    return;
+  }
+  wrap.innerHTML = '<table class="hist"><thead><tr><th>Name</th><th>Type</th><th>Updated</th><th>Status</th><th>Confidence</th></tr></thead><tbody>' +
+    recent.map(p=>`<tr>
+      <td class="hist-name" data-open="${p.id}">${escapeHtml(p.name)}</td>
+      <td><span class="qtype">${p.fileType}</span></td>
+      <td>${fmtDate(p.updatedAt)}</td>
+      <td><span class="badge ${statusClass(p.status)}">${p.status}</span></td>
+      <td>${typeof p.confidenceAfter==='number' ? p.confidenceAfter+'%' : '–'}</td>
+    </tr>`).join('') + '</tbody></table>';
+  wrap.querySelectorAll('[data-open]').forEach(el=> el.addEventListener('click', ()=>openProject(el.dataset.open)));
+}
+function statusClass(s){
+  switch(s){
+    case 'Completed': return 'completed';
+    case 'Needs Review': return 'review';
+    case 'Analyzing': return 'analyzing';
+    case 'Exported': return 'exported';
+    default: return 'uploaded';
+  }
+}
+
+/* ======================= NEW REPAIR — INPUT HANDLING ======================= */
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+function isRealFileDrag(e){
+  return e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files');
+}
+document.getElementById('btn-upload-file').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  try{ fileInput.click(); }
+  catch(err){ toast('Could not open the file picker: ' + err.message, 'error'); }
+});
+fileInput.addEventListener('change', e=>{ addFilesToQueue([...e.target.files]); fileInput.value=''; });
+
+['dragenter','dragover'].forEach(ev=> dropzone.addEventListener(ev, e=>{
+  if(!isRealFileDrag(e)) return;
+  e.preventDefault(); dropzone.classList.add('drag');
+}));
+['dragleave','drop'].forEach(ev=> dropzone.addEventListener(ev, e=>{
+  e.preventDefault(); dropzone.classList.remove('drag');
+}));
+dropzone.addEventListener('drop', e=>{
+  if(!isRealFileDrag(e)) return;
+  addFilesToQueue([...e.dataTransfer.files]);
+});
+dropzone.addEventListener('click', e=>{ if(e.target===dropzone) { try{ fileInput.click(); }catch(err){} } });
+
+document.getElementById('btn-paste-text').addEventListener('click', ()=>{
+  document.getElementById('paste-area').hidden = false;
+  document.getElementById('shot-hint').hidden = true;
+});
+document.getElementById('btn-cancel-paste').addEventListener('click', ()=>{ document.getElementById('paste-area').hidden = true; });
+document.getElementById('btn-add-pasted').addEventListener('click', ()=>{
+  const t = document.getElementById('paste-textarea').value.trim();
+  if(!t){ toast('Paste some text first.'); return; }
+  queue.push({id:uid(), kind:'text', name:'Pasted text — '+new Date().toLocaleTimeString(), fileType:'pasted', raw:t, status:'pending'});
+  document.getElementById('paste-textarea').value='';
+  document.getElementById('paste-area').hidden = true;
+  renderQueue();
+});
+document.getElementById('btn-paste-shot').addEventListener('click', ()=>{
+  document.getElementById('shot-hint').hidden = false;
+  document.getElementById('paste-area').hidden = true;
+  try{ document.getElementById('shot-target').focus(); }catch(err){}
+});
+document.getElementById('btn-clipboard-read').addEventListener('click', async ()=>{
+  if(!navigator.clipboard || !navigator.clipboard.read){
+    toast('Your browser doesn\'t support one-tap clipboard reading — use the box below instead.');
+    return;
+  }
+  try{
+    const items = await navigator.clipboard.read();
+    for(const item of items){
+      const imgType = item.types.find(t=>t.startsWith('image/'));
+      if(imgType){
+        const blob = await item.getType(imgType);
+        const b64 = await blobToBase64(blob);
+        queue.push({id:uid(), kind:'image', name:'Pasted screenshot — '+new Date().toLocaleTimeString(), fileType:'image', mediaType:imgType, base64:b64, status:'pending'});
+        renderQueue();
+        toast('Screenshot added to queue.','success');
+        document.getElementById('shot-hint').hidden = true;
+        return;
+      }
+    }
+    toast('No image found on your clipboard — copy a screenshot first.');
+  }catch(err){
+    toast('Clipboard access failed (' + err.message + '). Try the box below, or check site permissions.', 'error');
+  }
+});
+document.getElementById('shot-target').addEventListener('paste', async (e)=>{
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items){ toast('No clipboard data received.'); return; }
+  for(const item of items){
+    if(item.type.startsWith('image/')){
+      const blob = item.getAsFile();
+      const b64 = await blobToBase64(blob);
+      queue.push({id:uid(), kind:'image', name:'Pasted screenshot — '+new Date().toLocaleTimeString(), fileType:'image', mediaType:item.type, base64:b64, status:'pending'});
+      renderQueue();
+      toast('Screenshot added to queue.','success');
+      document.getElementById('shot-hint').hidden = true;
+      return;
+    }
+  }
+  toast('No image found on clipboard.');
+});
+
+function addFilesToQueue(files){
+  files.forEach(f=>{
+    if(f.size > 15*1024*1024){ toast(f.name+' is over 15MB, skipped.'); return; }
+    const ext = f.name.split('.').pop().toLowerCase();
+    let ftype = 'txt';
+    if(['docx'].includes(ext)) ftype='docx';
+    else if(['pdf'].includes(ext)) ftype='pdf';
+    else if(['xlsx','xls'].includes(ext)) ftype='xlsx';
+    else if(['png','jpg','jpeg','webp'].includes(ext)) ftype='image';
+    else if(['txt'].includes(ext)) ftype='txt';
+    else { toast(f.name+': unsupported type, skipped.'); return; }
+    queue.push({id:uid(), kind:'file', name:f.name, fileType:ftype, file:f, status:'pending'});
+  });
+  renderQueue();
+}
+function blobToBase64(blob){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = ()=>res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+function renderQueue(){
+  const wrap = document.getElementById('queue-list');
+  wrap.innerHTML = queue.map(q=>`
+    <div class="queue-item" data-id="${q.id}">
+      <span class="qtype">${q.fileType}</span>
+      <span class="qname">${escapeHtml(q.name)}</span>
+      <span class="qstatus ${q.status}">${q.status}</span>
+      <button class="icon-btn" data-remove="${q.id}" title="Remove">✕</button>
+    </div>`).join('');
+  wrap.querySelectorAll('[data-remove]').forEach(b=> b.addEventListener('click', ()=>{
+    queue = queue.filter(q=>q.id!==b.dataset.remove); renderQueue();
+  }));
+  document.getElementById('analyze-row').hidden = queue.length===0;
+  document.getElementById('analyze-note').textContent = queue.length>1 ? queue.length+' documents queued — processed one at a time.' : '';
+}
+
+/* ======================= TEXT EXTRACTION ======================= */
+async function extractFromFile(item){
+  const {file, fileType} = item;
+  if(fileType==='txt'){
+    return {text: await file.text()};
+  }
+  if(fileType==='docx'){
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({arrayBuffer:buf});
+    return {text: result.value};
+  }
+  if(fileType==='pdf'){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({data:buf}).promise;
+    let text = '';
+    const layout = [];
+    for(let i=1;i<=doc.numPages;i++){
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      text += `\n--- Page ${i} ---\n`;
+      content.items.forEach(it=>{
+        if(!it.str) return;
+        const start = text.length;
+        text += it.str;
+        const end = text.length;
+        const fontSize = Math.hypot(it.transform[2], it.transform[3]) || it.height || 10;
+        layout.push({page:i, x:it.transform[4], y:it.transform[5], w:it.width, h:it.height||fontSize, fontSize, start, end});
+        text += ' ';
+      });
+    }
+    return {text, layout, pageCount: doc.numPages};
+  }
+  if(fileType==='xlsx'){
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    let text = '';
+    wb.SheetNames.forEach(name=>{
+      const sheet = wb.Sheets[name];
+      text += `\n--- Sheet: ${name} ---\n` + XLSX.utils.sheet_to_csv(sheet);
+    });
+    return {text};
+  }
+  return {text:''};
+}
+function arrayBufferToBase64(buf){
+  let binary = '';
+  const bytes = new Uint8Array(buf);
+  const chunk = 0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  }
+  return btoa(binary);
+}
+function base64ToArrayBuffer(b64){
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+const MIME_BY_TYPE = {pdf:'application/pdf', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt:'text/plain'};
+
+/* ======================= AI CALLS ======================= */
+async function callAI({system, userText, imageBase64, mediaType}){
+  if(settings.backend === 'groq'){
+    return callGroq({system, userText, imageBase64, mediaType});
+  }
+  return callClaude({system, userText, imageBase64, mediaType});
+}
+
+async function callClaude({system, userText, imageBase64, mediaType}){
+  if(!settings.apiKey){ throw new Error('No Claude API key set. Add one in Settings.'); }
+  const content = [];
+  if(imageBase64){
+    content.push({type:'image', source:{type:'base64', media_type:mediaType, data:imageBase64}});
+  }
+  content.push({type:'text', text:userText});
+  const body = {
+    model: settings.model || 'claude-sonnet-5',
+    max_tokens: 4096,
+    system: system,
+    messages: [{role:'user', content}]
+  };
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key': settings.apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok){
+    const errText = await resp.text();
+    throw new Error('Claude API error ' + resp.status + ': ' + errText.slice(0,200));
+  }
+  const data = await resp.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  if(!textBlock) throw new Error('No text in AI response.');
+  return textBlock.text;
+}
+
+async function callGroq({system, userText, imageBase64, mediaType}){
+  if(!settings.groqKey){ throw new Error('No Groq API key set. Add one in Settings — it\'s free at console.groq.com/keys.'); }
+  const model = imageBase64 ? (settings.groqVisionModel || 'qwen/qwen3.6-27b') : (settings.groqModel || 'openai/gpt-oss-120b');
+  let userContent;
+  if(imageBase64){
+    userContent = [
+      {type:'text', text:userText},
+      {type:'image_url', image_url:{url:`data:${mediaType};base64,${imageBase64}`}}
+    ];
+  } else {
+    userContent = userText;
+  }
+  const body = {
+    model,
+    max_tokens: 4096,
+    temperature: 0.2,
+    messages: [
+      {role:'system', content:system},
+      {role:'user', content:userContent}
+    ]
+  };
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'authorization': 'Bearer ' + settings.groqKey
+    },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok){
+    const errText = await resp.text();
+    throw new Error('Groq API error ' + resp.status + ': ' + errText.slice(0,220) + (resp.status===404 ? ' — this model may have been retired; check console.groq.com/docs/models and update it in Settings.' : ''));
+  }
+  const data = await resp.json();
+  const msg = data.choices && data.choices[0] && data.choices[0].message;
+  if(!msg || !msg.content) throw new Error('No text in AI response.');
+  return msg.content;
+}
+
+function buildSystemPrompt(){
+  const sens = settings.sensitivity;
+  const sensNote = sens==='low' ? 'Only flag text that is clearly, unambiguously corrupted — random symbols, encoding garbage, nonsensical AI output. Leave ordinary typos and style choices alone.'
+    : sens==='high' ? 'Flag anything even mildly questionable — awkward phrasing, possible OCR slips, ambiguous formatting — in addition to obvious corruption.'
+    : 'Flag clear corruption and meaningful errors, but do not flag normal author style or minor stylistic quirks.';
+  return `You are a meticulous document-restoration assistant embedded in an app called Scriptorium.
+You receive text extracted from a document that may have been corrupted during AI generation, format conversion, or OCR: garbled characters, black-box symbols, random shapes, broken bullets, mixed languages, duplicated or missing words, nonsensical AI-hallucinated sentences, broken tables, or corrupted special/math characters.
+
+Your job: separate text that is correct (leave unchanged) from text that is genuinely corrupted (reconstruct it) from text that is uncertain (mark "Needs Review"). ${sensNote}
+Never rewrite the whole document. Never invent facts that aren't implied by context. Preserve the author's original language and style. Do not translate.
+
+Respond with ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
+{
+  "language": "detected primary language",
+  "documentQualityBefore": 0-100 integer estimate of how much of the original text was clean vs corrupted,
+  "documentQualityAfter": 0-100 integer estimate of quality after your corrections,
+  "correctedFullText": "the FULL text with your corrections applied in place, same overall structure as input",
+  "issues": [
+    {
+      "original": "exact substring from the INPUT text that had a problem (empty string only if category is Added)",
+      "corrected": "exact substring that appears in correctedFullText replacing it",
+      "category": "Corrected | Reconstructed | Formatting Fixed | Needs Review | Added",
+      "confidence": 0-100 integer,
+      "reason": "one concise sentence explaining what was wrong and why you chose this fix"
+    }
+  ],
+  "summary": "one short paragraph summarizing the overall condition of the document and what was done"
+}
+The "original" and "corrected" strings must be EXACT substrings (character for character) of the input text and of correctedFullText respectively, so they can be located programmatically. Keep each snippet short (a phrase or sentence, not a whole paragraph) unless the corruption spans more.`;
+}
+
+function chunkText(text, size){
+  if(text.length <= size) return [text];
+  const chunks = [];
+  let start = 0;
+  while(start < text.length){
+    let end = Math.min(start+size, text.length);
+    if(end < text.length){
+      const brk = text.lastIndexOf('\n\n', end);
+      if(brk > start + size*0.5) end = brk;
+    }
+    chunks.push(text.slice(start,end));
+    start = end;
+  }
+  return chunks;
+}
+
+function safeParseJSON(raw){
+  let t = raw.trim();
+  t = t.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  const first = t.indexOf('{'); const last = t.lastIndexOf('}');
+  if(first>=0 && last>first) t = t.slice(first, last+1);
+  return JSON.parse(t);
+}
+
+async function analyzeText(fullText, logFn){
+  const chunks = chunkText(fullText, 6000);
+  let correctedParts = [], allIssues = [], qBeforeArr=[], qAfterArr=[], lang='', summaryParts=[];
+  for(let i=0;i<chunks.length;i++){
+    if(logFn) logFn(`Analyzing section ${i+1} of ${chunks.length}…`);
+    const raw = await callAI({system: buildSystemPrompt(), userText: chunks[i]});
+    let parsed;
+    try{ parsed = safeParseJSON(raw); }catch(e){ throw new Error('Could not parse AI response for a section: '+e.message); }
+    correctedParts.push(parsed.correctedFullText || chunks[i]);
+    allIssues = allIssues.concat(parsed.issues||[]);
+    if(typeof parsed.documentQualityBefore==='number') qBeforeArr.push(parsed.documentQualityBefore);
+    if(typeof parsed.documentQualityAfter==='number') qAfterArr.push(parsed.documentQualityAfter);
+    if(parsed.language) lang = parsed.language;
+    if(parsed.summary) summaryParts.push(parsed.summary);
+  }
+  const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+  return {
+    originalFullText: fullText,
+    correctedFullText: correctedParts.join('\n\n'),
+    issues: allIssues,
+    qualityBefore: avg(qBeforeArr) ?? 60,
+    qualityAfter: avg(qAfterArr) ?? 90,
+    language: lang || 'Unknown',
+    summary: summaryParts.join(' ')
+  };
+}
+
+async function analyzeImage(base64, mediaType, logFn){
+  if(logFn) logFn('Running vision OCR + corruption detection…');
+  const sys = buildSystemPrompt() + `\nThe input is an IMAGE of a document page or screenshot, not raw text. First transcribe all visible text faithfully (this becomes the basis of "correctedFullText" and the source for "original" snippets), then identify corrupted regions the same way: black boxes, missing/broken characters, strange symbols, misaligned or overlapping text, garbled AI-generated captions, etc.`;
+  const raw = await callAI({system: sys, userText:'Transcribe and repair this document image.', imageBase64:base64, mediaType});
+  const parsed = safeParseJSON(raw);
+  return {
+    originalFullText: parsed.originalFullText || parsed.correctedFullText || '(transcription unavailable)',
+    correctedFullText: parsed.correctedFullText || '',
+    issues: parsed.issues||[],
+    qualityBefore: parsed.documentQualityBefore ?? 60,
+    qualityAfter: parsed.documentQualityAfter ?? 90,
+    language: parsed.language || 'Unknown',
+    summary: parsed.summary || ''
+  };
+}
+
+/* ======================= PROCESS QUEUE ======================= */
+document.getElementById('btn-analyze-all').addEventListener('click', processQueue);
+async function processQueue(){
+  const hasKey = settings.backend==='groq' ? !!settings.groqKey : !!settings.apiKey;
+  if(!hasKey){
+    toast('Add your ' + (settings.backend==='groq'?'Groq':'Claude') + ' API key in Settings first.','error');
+    showView('settings');
+    return;
+  }
+  const log = document.getElementById('progress-log');
+  log.innerHTML = '';
+  function addLog(msg, cls){
+    const d = document.createElement('div');
+    d.className = 'step ' + (cls||'');
+    d.textContent = msg;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  }
+  for(const item of queue){
+    item.status = 'working'; renderQueue();
+    addLog(`Uploading "${item.name}"…`, 'active');
+    try{
+      let result;
+      let layout = null;
+      let originalFile = null;
+      if(item.kind==='image'){
+        addLog('Extracting text…');
+        result = await analyzeImage(item.base64, item.mediaType, m=>addLog(m,'active'));
+        originalFile = {base64:item.base64, mime:item.mediaType, filename:item.name.replace(/[^a-z0-9.\- ]/gi,'') + '.' + (item.mediaType.split('/')[1]||'png')};
+      } else if(item.kind==='text'){
+        const raw = item.raw;
+        if(!raw || !raw.trim()){ throw new Error('No extractable text found.'); }
+        addLog('Detecting corrupted content…','active');
+        result = await analyzeText(raw, m=>addLog(m,'active'));
+      } else {
+        const buf = await item.file.arrayBuffer();
+        originalFile = {base64: arrayBufferToBase64(buf), mime: item.file.type || MIME_BY_TYPE[item.fileType] || 'application/octet-stream', filename: item.file.name};
+        const extracted = await extractFromFile(item);
+        const raw = extracted.text;
+        layout = extracted.layout || null;
+        if(!raw || !raw.trim()){ throw new Error('No extractable text found.'); }
+        addLog('Extracting text…');
+        addLog('Detecting corrupted content…','active');
+        result = await analyzeText(raw, m=>addLog(m,'active'));
+      }
+      addLog('Checking formatting & scoring confidence…');
+      const proj = buildProject(item, result, layout, originalFile);
+      projects.unshift(proj);
+      saveProjects(projects);
+      item.status = proj.status==='Needs Review' ? 'review' : 'done';
+      addLog(`Complete ✓ — ${item.name}`, 'done');
+    }catch(err){
+      item.status = 'error';
+      addLog(`Error on "${item.name}": ${err.message}`, 'done');
+      toast(err.message, 'error');
+    }
+    renderQueue();
+  }
+  toast('Batch processing finished.','success');
+  queue = queue.filter(q=>q.status==='error');
+  renderQueue();
+  renderDashboard();
+}
+
+function buildProject(item, result, layout, originalFile){
+  const issues = (result.issues||[]).map(i=>({
+    original: i.original||'',
+    corrected: i.corrected||'',
+    category: i.category || 'Corrected',
+    confidence: typeof i.confidence==='number' ? i.confidence : 70,
+    reason: i.reason||'',
+    accepted: settings.autoAccept ? (i.confidence>=90) : true
+  }));
+  computeOffsets(result.originalFullText, issues, 'original', '_ostart','_oend');
+  computeOffsets(result.correctedFullText, issues, 'corrected', '_start','_end');
+  const needsReview = issues.some(i=>i.category==='Needs Review');
+  const now = nowISO();
+  return {
+    id: uid(),
+    name: item.name.replace(/\.[a-z0-9]+$/i,''),
+    fileType: item.fileType,
+    createdAt: now,
+    updatedAt: now,
+    originalText: result.originalFullText,
+    correctedText: result.correctedFullText,
+    issues,
+    confidenceBefore: result.qualityBefore,
+    confidenceAfter: result.qualityAfter,
+    language: result.language,
+    summary: result.summary,
+    status: needsReview ? 'Needs Review' : 'Completed',
+    pdfLayout: layout || null,
+    originalFile: originalFile || null,
+    versions: [
+      {label:'Original', at:now, text:result.originalFullText},
+      {label:'AI Correction', at:now, text:result.correctedFullText}
+    ]
+  };
+}
+
+function computeOffsets(text, issues, field, startKey, endKey){
+  let cursor = 0;
+  issues.forEach(issue=>{
+    const snippet = issue[field];
+    if(!snippet){ issue[startKey]=-1; issue[endKey]=-1; return; }
+    let idx = text.indexOf(snippet, cursor);
+    if(idx===-1) idx = text.indexOf(snippet);
+    if(idx===-1){ issue[startKey]=-1; issue[endKey]=-1; return; }
+    issue[startKey]=idx; issue[endKey]=idx+snippet.length;
+    cursor = idx+snippet.length;
+  });
+}
+
+/* ======================= HISTORY ======================= */
+function renderHistory(){
+  const search = (document.getElementById('hist-search').value||'').toLowerCase();
+  const filterType = document.getElementById('hist-filter-type').value;
+  const sort = document.getElementById('hist-sort').value;
+  let list = projects.filter(p=>{
+    if(filterType && p.fileType!==filterType) return false;
+    if(search && !(p.name.toLowerCase().includes(search) || (p.originalText||'').toLowerCase().includes(search))) return false;
+    return true;
+  });
+  list.sort((a,b)=> sort==='newest' ? new Date(b.updatedAt)-new Date(a.updatedAt) : new Date(a.updatedAt)-new Date(b.updatedAt));
+  const wrap = document.getElementById('history-table-wrap');
+  if(!list.length){
+    wrap.innerHTML = '<div class="empty-state"><div class="es-title">Nothing here yet</div>Repair a document to build your history.</div>';
+    return;
+  }
+  wrap.innerHTML = '<table class="hist"><thead><tr><th>Name</th><th>Type</th><th>Updated</th><th>Issues</th><th>Confidence</th><th>Status</th><th></th></tr></thead><tbody>' +
+    list.map(p=>`<tr>
+      <td class="hist-name" data-open="${p.id}">${escapeHtml(p.name)}</td>
+      <td><span class="qtype">${p.fileType}</span></td>
+      <td>${fmtDate(p.updatedAt)}</td>
+      <td>${(p.issues||[]).length}</td>
+      <td>${typeof p.confidenceAfter==='number' ? p.confidenceAfter+'%' : '–'}</td>
+      <td><span class="badge ${statusClass(p.status)}">${p.status}</span></td>
+      <td class="row-actions">
+        <button class="icon-btn" data-open="${p.id}" title="Open">↗</button>
+        <button class="icon-btn" data-rename="${p.id}" title="Rename">✎</button>
+        <button class="icon-btn" data-del="${p.id}" title="Delete">✕</button>
+      </td>
+    </tr>`).join('') + '</tbody></table>';
+  wrap.querySelectorAll('[data-open]').forEach(el=> el.addEventListener('click', ()=>openProject(el.dataset.open)));
+  wrap.querySelectorAll('[data-rename]').forEach(el=> el.addEventListener('click', ()=>renameProject(el.dataset.rename)));
+  wrap.querySelectorAll('[data-del]').forEach(el=> el.addEventListener('click', ()=>deleteProject(el.dataset.del)));
+}
+['hist-search','hist-filter-type','hist-sort'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderHistory);
+  document.getElementById(id).addEventListener('change', renderHistory);
+});
+
+function renameProject(id){
+  openModal(`<h3>Rename project</h3><input class="input" id="rename-input" style="width:100%;" value="${escapeHtml(projects.find(p=>p.id===id).name)}">
+    <div class="modal-actions"><button class="btn btn-ghost" id="rn-cancel">Cancel</button><button class="btn btn-primary" id="rn-save">Save</button></div>`);
+  document.getElementById('rn-cancel').addEventListener('click', closeModal);
+  document.getElementById('rn-save').addEventListener('click', ()=>{
+    const p = projects.find(p=>p.id===id);
+    p.name = document.getElementById('rename-input').value.trim() || p.name;
+    p.updatedAt = nowISO();
+    saveProjects(projects);
+    closeModal(); renderHistory(); renderDashboard();
+  });
+}
+function deleteProject(id){
+  openModal(`<h3>Delete project</h3><p style="color:var(--text-dim);font-size:13px;">This permanently removes the project and its history from this device. This can't be undone.</p>
+    <div class="modal-actions"><button class="btn btn-ghost" id="del-cancel">Cancel</button><button class="btn btn-primary btn-danger" id="del-confirm">Delete permanently</button></div>`);
+  document.getElementById('del-cancel').addEventListener('click', closeModal);
+  document.getElementById('del-confirm').addEventListener('click', ()=>{
+    projects = projects.filter(p=>p.id!==id);
+    saveProjects(projects);
+    closeModal(); renderHistory(); renderDashboard();
+  });
+}
+function openModal(html){ document.getElementById('modal-box').innerHTML = html; document.getElementById('modal-bg').hidden=false; }
+function closeModal(){ document.getElementById('modal-bg').hidden = true; }
+document.getElementById('modal-bg').addEventListener('click', e=>{ if(e.target.id==='modal-bg') closeModal(); });
+
+/* ======================= PROJECT DETAIL ======================= */
+function openProject(id){
+  currentProjectId = id; currentTab='changes'; selectedIssueIdx=null; editMode=false;
+  showView('project');
+  renderProject();
+}
+function getCurrentProject(){ return projects.find(p=>p.id===currentProjectId); }
+
+function renderProject(){
+  const p = getCurrentProject();
+  if(!p){ showView('history'); return; }
+  document.getElementById('pd-name').textContent = p.name;
+  document.getElementById('pd-type').textContent = p.fileType.toUpperCase();
+  document.getElementById('pd-date').textContent = fmtDate(p.updatedAt);
+  document.getElementById('pd-status').textContent = p.status;
+  document.getElementById('pd-lang').textContent = p.language || '—';
+  document.getElementById('pd-before').textContent = p.confidenceBefore+'%';
+  document.getElementById('pd-after').textContent = p.confidenceAfter+'%';
+
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===currentTab));
+  document.getElementById('tab-changes').hidden = currentTab!=='changes';
+  document.getElementById('tab-report').hidden = currentTab!=='report';
+  document.getElementById('tab-versions').hidden = currentTab!=='versions';
+
+  renderDiffPanes();
+  renderIssueList();
+  renderInspector();
+  renderReport();
+  renderVersions();
+
+  document.getElementById('btn-download-original').hidden = !p.originalFile;
+  const canPreserveLayout = p.fileType==='pdf' && p.originalFile && p.pdfLayout && p.pdfLayout.length;
+  document.getElementById('btn-export-pdf-layout').hidden = !canPreserveLayout;
+  document.getElementById('btn-export-pdf').textContent = canPreserveLayout ? 'Export .pdf (plain text)' : 'Export .pdf';
+  const hint = document.getElementById('layout-hint');
+  if(canPreserveLayout){
+    hint.hidden = false;
+    hint.textContent = '"Preserve layout" patches only the corrected snippets onto your original PDF — images, design and everything else stay exactly as uploaded. "Plain text" rebuilds a fresh document with no original formatting or images.';
+  } else if(p.fileType==='pdf'){
+    hint.hidden = false;
+    hint.textContent = 'Layout-preserving export isn\'t available for this project (it was processed before this feature, or its text positions couldn\'t be read) — exports below are plain text only.';
+  } else {
+    hint.hidden = true;
+  }
+}
+document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click', ()=>{ currentTab=t.dataset.tab; renderProject(); }));
+
+function renderDiffPanes(){
+  const p = getCurrentProject();
+  const origEl = document.getElementById('pane-original');
+  const corrEl = document.getElementById('pane-corrected');
+  origEl.contentEditable = 'false';
+  if(editMode){
+    corrEl.contentEditable = 'true';
+    corrEl.textContent = p.correctedText;
+    origEl.innerHTML = escapeHtml(p.originalText);
+    document.getElementById('pd-orig-count').textContent = '';
+    document.getElementById('pd-corr-count').textContent = 'editing…';
+    return;
+  }
+  corrEl.contentEditable = 'false';
+  origEl.innerHTML = highlightText(p.originalText, p.issues, 'original', '_ostart','_oend');
+  corrEl.innerHTML = highlightText(p.correctedText, p.issues, 'corrected', '_start','_end');
+  document.getElementById('pd-orig-count').textContent = p.originalText.length+' chars';
+  document.getElementById('pd-corr-count').textContent = p.correctedText.length+' chars';
+  origEl.querySelectorAll('mark.chg').forEach(m=> m.addEventListener('click', ()=>{ selectedIssueIdx=+m.dataset.idx; renderInspector(); highlightSelection(); }));
+  corrEl.querySelectorAll('mark.chg').forEach(m=> m.addEventListener('click', ()=>{ selectedIssueIdx=+m.dataset.idx; renderInspector(); highlightSelection(); }));
+}
+function highlightSelection(){
+  document.querySelectorAll('mark.chg').forEach(m=> m.classList.toggle('selected', +m.dataset.idx===selectedIssueIdx));
+  document.querySelectorAll('.issue-row').forEach(r=> r.classList.toggle('selected', +r.dataset.idx===selectedIssueIdx));
+}
+function highlightText(text, issues, field, startKey, endKey){
+  const valid = issues.map((iss,idx)=>({...iss,idx})).filter(i=>i[startKey]>=0).sort((a,b)=>a[startKey]-b[startKey]);
+  let out=''; let pos=0;
+  valid.forEach(iss=>{
+    if(iss[startKey] < pos) return; // overlap guard
+    out += escapeHtml(text.slice(pos, iss[startKey]));
+    const rejectedCls = (field==='corrected' && iss.accepted===false) ? ' removed' : '';
+    out += `<mark class="chg ${catClass(iss.category)}${rejectedCls}" data-idx="${iss.idx}" title="${escapeHtml(iss.reason||'')}">${escapeHtml(text.slice(iss[startKey], iss[endKey]))}</mark>`;
+    pos = iss[endKey];
+  });
+  out += escapeHtml(text.slice(pos));
+  return out || '<span style="color:var(--text-faint)">(empty)</span>';
+}
+
+function renderIssueList(){
+  const p = getCurrentProject();
+  const wrap = document.getElementById('issue-list');
+  if(!p.issues.length){ wrap.innerHTML = '<div style="color:var(--text-faint);font-size:12.5px;">No issues detected — this document looked clean.</div>'; return; }
+  wrap.innerHTML = p.issues.map((iss,idx)=>`
+    <div class="issue-row ${iss.accepted===false?'rejected':''}" data-idx="${idx}">
+      <span class="cat-dot" style="background:${catDotColor(iss.category)}"></span>
+      <span class="isummary">${escapeHtml(iss.category)}: ${escapeHtml((iss.corrected||iss.original||'').slice(0,80))}</span>
+      <span class="iconf">${iss.confidence}%</span>
+    </div>`).join('');
+  wrap.querySelectorAll('.issue-row').forEach(r=> r.addEventListener('click', ()=>{ selectedIssueIdx=+r.dataset.idx; renderInspector(); highlightSelection(); }));
+}
+
+function renderInspector(){
+  const p = getCurrentProject();
+  const box = document.getElementById('inspector');
+  if(selectedIssueIdx===null || !p.issues[selectedIssueIdx]){ box.hidden = true; return; }
+  const iss = p.issues[selectedIssueIdx];
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="ins-head">
+      <span class="cat-tag" style="background:${catDotColor(iss.category)}22;color:${catDotColor(iss.category)}">${escapeHtml(iss.category)}</span>
+      <span class="conf">${iss.confidence}% confidence</span>
+    </div>
+    <div class="ins-row">
+      <div><div class="ins-label">ORIGINAL</div><div class="ins-text">${escapeHtml(iss.original)||'<em>(nothing — new text added)</em>'}</div></div>
+      <div><div class="ins-label">${iss.accepted===false?'REJECTED — REVERTED TO ORIGINAL':'CORRECTED'}</div><div class="ins-text">${escapeHtml(iss.corrected)}</div></div>
+    </div>
+    <div class="reason"><b>Why did AI change this?</b><br>${escapeHtml(iss.reason || 'No explanation provided.')}</div>
+    <div class="ins-actions">
+      <button class="btn btn-sm btn-primary" id="ins-accept">Accept</button>
+      <button class="btn btn-sm" id="ins-reject">Reject</button>
+      <button class="btn btn-sm btn-ghost" id="ins-edit">Edit manually</button>
+    </div>`;
+  document.getElementById('ins-accept').addEventListener('click', ()=>{ iss.accepted=true; saveCurrentProject(); renderDiffPanes(); renderIssueList(); renderInspector(); });
+  document.getElementById('ins-reject').addEventListener('click', ()=>{ iss.accepted=false; saveCurrentProject(); renderDiffPanes(); renderIssueList(); renderInspector(); });
+  document.getElementById('ins-edit').addEventListener('click', ()=>{
+    openModal(`<h3>Edit correction</h3><textarea class="paste-box" id="edit-corr-text" style="min-height:100px;">${escapeHtml(iss.corrected)}</textarea>
+      <div class="modal-actions"><button class="btn btn-ghost" id="ec-cancel">Cancel</button><button class="btn btn-primary" id="ec-save">Save</button></div>`);
+    document.getElementById('ec-cancel').addEventListener('click', closeModal);
+    document.getElementById('ec-save').addEventListener('click', ()=>{
+      const newVal = document.getElementById('edit-corr-text').value;
+      // apply into correctedText at the recorded offsets, then recompute offsets for all issues
+      const p2 = getCurrentProject();
+      p2.correctedText = p2.correctedText.slice(0,iss._start) + newVal + p2.correctedText.slice(iss._end);
+      iss.corrected = newVal; iss.accepted = true;
+      computeOffsets(p2.correctedText, p2.issues, 'corrected','_start','_end');
+      saveCurrentProject();
+      closeModal(); renderDiffPanes(); renderIssueList(); renderInspector();
+    });
+  });
+}
+
+function saveCurrentProject(){
+  const p = getCurrentProject();
+  p.updatedAt = nowISO();
+  const needsReview = p.issues.some(i=>i.category==='Needs Review' && i.accepted!==false);
+  p.status = needsReview ? 'Needs Review' : 'Completed';
+  saveProjects(projects);
+}
+
+document.getElementById('btn-accept-all').addEventListener('click', ()=>{
+  const p = getCurrentProject(); p.issues.forEach(i=>i.accepted=true); saveCurrentProject(); renderDiffPanes(); renderIssueList(); renderInspector();
+});
+document.getElementById('btn-reject-all').addEventListener('click', ()=>{
+  const p = getCurrentProject(); p.issues.forEach(i=>i.accepted=false); saveCurrentProject(); renderDiffPanes(); renderIssueList(); renderInspector();
+});
+document.getElementById('btn-toggle-edit').addEventListener('click', ()=>{
+  const p = getCurrentProject();
+  if(editMode){
+    // saving manual edit
+    p.correctedText = document.getElementById('pane-corrected').innerText;
+    p.versions.push({label:'Manual Edits', at:nowISO(), text:p.correctedText});
+    computeOffsets(p.correctedText, p.issues, 'corrected','_start','_end');
+    saveCurrentProject();
+    toast('Manual edits saved.','success');
+  }
+  editMode = !editMode;
+  document.getElementById('btn-toggle-edit').textContent = editMode ? 'Save manual edit' : 'Edit manually';
+  renderDiffPanes();
+});
+
+/* current, finalized text respecting accept/reject state */
+function finalText(p){
+  return p.correctedText; // reject already shown via 'removed' styling; corrected text field IS the accepted/working text (rejections tracked visually + in export below)
+}
+function exportableText(p){
+  // build text where rejected issues fall back to original snippet
+  const valid = p.issues.map((iss,idx)=>({...iss,idx})).filter(i=>i._start>=0).sort((a,b)=>a._start-b._start);
+  let out=''; let pos=0;
+  valid.forEach(iss=>{
+    if(iss._start<pos) return;
+    out += p.correctedText.slice(pos, iss._start);
+    out += iss.accepted===false ? iss.original : iss.corrected;
+    pos = iss._end;
+  });
+  out += p.correctedText.slice(pos);
+  return out;
+}
+
+/* ======================= REPORT ======================= */
+function renderReport(){
+  const p = getCurrentProject();
+  const fixed = p.issues.filter(i=>i.accepted!==false).length;
+  const review = p.issues.filter(i=>i.category==='Needs Review').length;
+  const formatting = p.issues.filter(i=>i.category==='Formatting Fixed').length;
+  const textIssues = p.issues.length - formatting;
+  const report = `AI REPAIR REPORT
+================
+Document: ${p.name}
+Type: ${p.fileType.toUpperCase()}
+Language: ${p.language}
+Analyzed: ${fmtDate(p.createdAt)}
+
+SUMMARY
+${p.summary || '(no summary provided)'}
+
+Total issues detected: ${p.issues.length}
+Automatically fixed:   ${fixed}
+Needs review:          ${review}
+Formatting issues:     ${formatting}
+Text issues:           ${textIssues}
+
+Document quality before: ${p.confidenceBefore}%
+Document quality after:  ${p.confidenceAfter}%
+
+DETAILED ISSUES
+${p.issues.map((i,idx)=>`${idx+1}. [${i.category}] (${i.confidence}% confidence) ${i.accepted===false?'— REJECTED':''}\n   Original:  ${i.original||'(none)'}\n   Corrected: ${i.corrected}\n   Reason:    ${i.reason}`).join('\n\n') || '(none)'}
+`;
+  document.getElementById('report-box').textContent = report;
+}
+document.getElementById('btn-export-report').addEventListener('click', ()=>{
+  const p = getCurrentProject();
+  downloadBlob(document.getElementById('report-box').textContent, `${p.name} - repair report.md`, 'text/markdown');
+});
+
+/* ======================= VERSIONS ======================= */
+function renderVersions(){
+  const p = getCurrentProject();
+  const wrap = document.getElementById('versions-list');
+  wrap.innerHTML = p.versions.map((v,idx)=>`
+    <div style="border:1px solid var(--border-soft);border-radius:3px;padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div><b>Version ${idx+1} — ${escapeHtml(v.label)}</b> <span style="color:var(--text-faint);font-size:11.5px;">${fmtDate(v.at)}</span></div>
+        <button class="btn btn-sm" data-restore="${idx}">Restore this version</button>
+      </div>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--text-dim);max-height:120px;overflow:auto;white-space:pre-wrap;">${escapeHtml(v.text.slice(0,600))}${v.text.length>600?'…':''}</div>
+    </div>`).join('');
+  wrap.querySelectorAll('[data-restore]').forEach(b=> b.addEventListener('click', ()=>{
+    const v = p.versions[+b.dataset.restore];
+    p.correctedText = v.text;
+    computeOffsets(p.correctedText, p.issues, 'corrected','_start','_end');
+    p.versions.push({label:'Restored: '+v.label, at:nowISO(), text:v.text});
+    saveCurrentProject();
+    toast('Version restored.','success');
+    currentTab='changes'; renderProject();
+  }));
+}
+
+/* ======================= EXPORT ======================= */
+function downloadBlob(content, filename, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+document.getElementById('btn-export-txt').addEventListener('click', ()=>{
+  const p = getCurrentProject();
+  downloadBlob(exportableText(p), `${p.name}.txt`, 'text/plain');
+  markExported(p);
+});
+document.getElementById('btn-export-docx').addEventListener('click', async ()=>{
+  const p = getCurrentProject();
+  await exportDocx(exportableText(p), p.name);
+  markExported(p);
+});
+document.getElementById('btn-export-pdf').addEventListener('click', ()=>{
+  const p = getCurrentProject();
+  exportPdf(exportableText(p), p.name);
+  markExported(p);
+});
+function markExported(p){
+  p.status='Exported'; p.updatedAt=nowISO();
+  p.versions.push({label:'Final Export', at:nowISO(), text:p.correctedText});
+  saveProjects(projects);
+  toast('Exported.','success');
+}
+
+async function exportDocx(text, name){
+  // minimal valid OOXML docx: one paragraph per line. Text-only (no rich formatting preserved).
+  const escXml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const paras = text.split(/\n+/).map(line=>`<w:p><w:r><w:t xml:space="preserve">${escXml(line)}</w:t></w:r></w:p>`).join('');
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paras}<w:sectPr/></w:body></w:document>`;
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypes);
+  zip.folder('_rels').file('.rels', rels);
+  zip.folder('word').file('document.xml', documentXml);
+  const blob = await zip.generateAsync({type:'blob'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`${name}.docx`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+function exportPdf(text, name){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const margin = 48;
+  const maxWidth = 595 - margin*2;
+  const lines = doc.splitTextToSize(text, maxWidth);
+  let y = margin;
+  doc.setFont('helvetica'); doc.setFontSize(11);
+  lines.forEach(line=>{
+    if(y > 842 - margin){ doc.addPage(); y = margin; }
+    doc.text(line, margin, y);
+    y += 15;
+  });
+  doc.save(`${name}.pdf`);
+}
+
+document.getElementById('btn-download-original').addEventListener('click', ()=>{
+  const p = getCurrentProject();
+  if(!p.originalFile) return;
+  const buf = base64ToArrayBuffer(p.originalFile.base64);
+  const blob = new Blob([buf], {type:p.originalFile.mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download = p.originalFile.filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+});
+document.getElementById('btn-export-pdf-layout').addEventListener('click', async ()=>{
+  const p = getCurrentProject();
+  const btn = document.getElementById('btn-export-pdf-layout');
+  btn.disabled = true; const oldLabel = btn.textContent; btn.textContent = 'Building…';
+  try{
+    await exportPdfPreserveLayout(p);
+    markExported(p);
+  }catch(err){
+    toast('Layout-preserving export failed: ' + err.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = oldLabel;
+});
+
+async function exportPdfPreserveLayout(p){
+  if(!p.originalFile || !p.pdfLayout || !p.pdfLayout.length){
+    throw new Error('No original PDF layout stored for this project.');
+  }
+  const { PDFDocument, rgb, StandardFonts } = PDFLib;
+  const bytes = base64ToArrayBuffer(p.originalFile.base64);
+  const pdfDoc = await PDFDocument.load(bytes);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const pages = pdfDoc.getPages();
+  const layout = p.pdfLayout;
+
+  let patched = 0;
+  p.issues.forEach(issue=>{
+    if(issue.accepted===false) return; // rejected — leave the original untouched
+    if(issue._ostart==null || issue._ostart<0 || issue._oend<0) return; // couldn't locate snippet in original text
+    const overlapping = layout.filter(it=> it.start < issue._oend && it.end > issue._ostart);
+    if(!overlapping.length) return;
+    const pageNum = overlapping[0].page;
+    const items = overlapping.filter(it=>it.page===pageNum);
+    const page = pages[pageNum-1];
+    if(!page) return;
+    const minX = Math.min(...items.map(it=>it.x));
+    const maxX = Math.max(...items.map(it=>it.x+it.w));
+    const minY = Math.min(...items.map(it=>it.y));
+    const maxY = Math.max(...items.map(it=>it.y + it.fontSize));
+    const fontSize = Math.max(6, Math.min(items[0].fontSize || 10, 20));
+    // redact the original snippet with a white patch, keeping everything else on the page (images included) untouched
+    page.drawRectangle({x:minX-1, y:minY-1, width:Math.max(maxX-minX,4)+2, height:Math.max(maxY-minY,fontSize)+2, color: rgb(1,1,1)});
+    page.drawText(issue.corrected, {x:minX, y:minY, size:fontSize, font, color: rgb(0,0,0)});
+    patched++;
+  });
+
+  if(patched===0){
+    toast('No located corrections to patch — exporting original layout unchanged.');
+  }
+  const outBytes = await pdfDoc.save();
+  const blob = new Blob([outBytes], {type:'application/pdf'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download = `${p.name} - repaired.pdf`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+
+/* ======================= SETTINGS ======================= */
+function toggleBackendFields(){
+  const backend = document.getElementById('set-backend').value;
+  document.getElementById('settings-groq').style.display = backend==='groq' ? '' : 'none';
+  document.getElementById('settings-claude').style.display = backend==='claude' ? '' : 'none';
+}
+function renderSettings(){
+  document.getElementById('set-backend').value = settings.backend;
+  document.getElementById('set-apikey').value = settings.apiKey;
+  document.getElementById('set-model').value = settings.model;
+  document.getElementById('set-groqkey').value = settings.groqKey;
+  document.getElementById('set-groqmodel').value = settings.groqModel;
+  document.getElementById('set-groqvisionmodel').value = settings.groqVisionModel;
+  document.getElementById('set-sensitivity').value = settings.sensitivity;
+  document.getElementById('set-autoaccept').checked = settings.autoAccept;
+  document.getElementById('set-preserve').checked = settings.preserve;
+  document.getElementById('set-exportfmt').value = settings.exportFmt;
+  toggleBackendFields();
+}
+document.getElementById('set-backend').addEventListener('change', toggleBackendFields);
+document.getElementById('btn-save-settings').addEventListener('click', ()=>{
+  settings = {
+    backend: document.getElementById('set-backend').value,
+    apiKey: document.getElementById('set-apikey').value.trim(),
+    model: document.getElementById('set-model').value.trim() || 'claude-sonnet-5',
+    groqKey: document.getElementById('set-groqkey').value.trim(),
+    groqModel: document.getElementById('set-groqmodel').value.trim() || 'openai/gpt-oss-120b',
+    groqVisionModel: document.getElementById('set-groqvisionmodel').value.trim() || 'qwen/qwen3.6-27b',
+    sensitivity: document.getElementById('set-sensitivity').value,
+    autoAccept: document.getElementById('set-autoaccept').checked,
+    preserve: document.getElementById('set-preserve').checked,
+    exportFmt: document.getElementById('set-exportfmt').value
+  };
+  saveSettings(settings);
+  toast('Settings saved.','success');
+});
+document.getElementById('btn-delete-history').addEventListener('click', ()=>{
+  openModal(`<h3>Delete all history</h3><p style="color:var(--text-dim);font-size:13px;">This permanently deletes every project, version, and report stored in this browser. This can't be undone.</p>
+    <div class="modal-actions"><button class="btn btn-ghost" id="dh-cancel">Cancel</button><button class="btn btn-primary btn-danger" id="dh-confirm">Delete everything</button></div>`);
+  document.getElementById('dh-cancel').addEventListener('click', closeModal);
+  document.getElementById('dh-confirm').addEventListener('click', ()=>{
+    projects = []; saveProjects(projects);
+    closeModal(); toast('History cleared.','success'); renderDashboard();
+  });
+});
+
+/* ======================= GLOBAL ERROR SURFACING ======================= */
+window.addEventListener('error', (e)=>{
+  toast('Something went wrong: ' + (e.message||'unknown error'), 'error');
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  toast('Something went wrong: ' + ((e.reason&&e.reason.message)||e.reason||'unknown error'), 'error');
+});
+
+/* ======================= PWA: INSTALL PROMPT ======================= */
+const DISMISS_KEY = 'scriptorium_install_dismissed_v1';
+let deferredInstallPrompt = null;
+const banner = document.getElementById('install-banner');
+
+function isStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function wasDismissedRecently(){
+  const t = +(localStorage.getItem(DISMISS_KEY) || 0);
+  return (Date.now() - t) < 1000*60*60*24*7; // don't re-nag for 7 days after "Not now"
+}
+function dismissBanner(){
+  banner.hidden = true;
+  localStorage.setItem(DISMISS_KEY, String(Date.now()));
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if(!isStandalone() && !wasDismissedRecently()){
+    document.getElementById('ib-title').textContent = 'Install Scriptorium';
+    document.getElementById('ib-sub').textContent = 'Add it to your device for one-tap access, even offline.';
+    banner.hidden = false;
+  }
+});
+document.getElementById('ib-install').addEventListener('click', async () => {
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    banner.hidden = true;
+    if(outcome === 'accepted') toast('Installed. Look for Scriptorium on your device.', 'success');
+  } else {
+    // iOS path — there is no programmatic install, just show the instructions again
+    banner.hidden = true;
+  }
+});
+document.getElementById('ib-dismiss').addEventListener('click', dismissBanner);
+
+// iOS Safari has no beforeinstallprompt — detect it and show manual instructions instead.
+(function iosFallback(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  if(isIOS && !isStandalone() && !wasDismissedRecently()){
+    setTimeout(()=>{
+      if(banner.hidden){
+        document.getElementById('ib-title').textContent = 'Add to Home Screen';
+        document.getElementById('ib-sub').textContent = 'Tap the Share icon, then "Add to Home Screen" to install Scriptorium.';
+        document.getElementById('ib-install').textContent = 'Got it';
+        banner.hidden = false;
+      }
+    }, 1200);
+  }
+})();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+
+/* ======================= INIT ======================= */
+renderDashboard();
+</script>
+</body>
+</html>
